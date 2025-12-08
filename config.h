@@ -93,7 +93,7 @@ static const char *dmenucmd[] = { "dmenu_run", "-m", dmenumon, "-fn", dmenufont,
 static int curr = 0;
 static void
 rotate_layout(const Arg *arg){
-	Arg topass = {.v = &layouts[++curr % 5]};   
+	Arg topass = {.v = &layouts[++curr % 6]};   
 	
 	setlayout(&topass);
 }
