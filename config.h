@@ -25,22 +25,25 @@ static const char *fonts[] = {
 
 static const char dmenufont[] = "JetBrains Mono NL:size=11";
 
-
-//background color
+// background color (keep as is)
 static const char col_gray1[]       = "#1a1b26";
-//inactive window border color
-static const char col_gray2[]       = "#de83c6";
-// font color
+// inactive window border color (dark gray)
+static const char col_gray2[]       = "#444444";
+// font color (white for normal)
 static const char col_gray3[]       = "#FFFFFF";
-//current window font
+// normal window font (white)
 static const char col_gray4[]       = "#FFFFFF";
-static const char col_cyan[]        = "#81aeff";
+// highlight color (light gray for selected bg/border)
+static const char col_cyan[]        = "#CCCCCC";
+// black text for highlighted background
+static const char col_black[]       = "#000000";
 
 static const char *colors[][3]      = {
 	/*               fg         bg         border   */
 	[SchemeNorm] = { col_gray3, col_gray1, col_gray2 },
-	[SchemeSel]  = { col_gray4, col_cyan,  col_cyan  },
+	[SchemeSel]  = { col_black, col_cyan,  col_cyan  },
 };
+
 /* tagging */
 static const char *tags[] = {"1","2","3","4","5","6","7","8","9","10"};
 static const Rule rules[] = {
@@ -88,7 +91,11 @@ static const Layout layouts[] = {
 /* commands */
 static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() */
 static const char *termcmd[]  = { "alacritty", NULL };
-static const char *dmenucmd[] = { "dmenu_run", "-m", dmenumon, "-fn", dmenufont, "-nb", col_gray1, "-nf", col_gray3, "-sb", col_cyan, "-sf", col_gray4, NULL };
+
+static const char *dmenucmd[] = { "dmenu_run", "-m", dmenumon, "-fn", dmenufont, 
+                                  "-nb", col_gray1, "-nf", col_gray3, 
+                                  "-sb", col_cyan, "-sf", col_black, NULL };
+
 
 static void
 rotate_layout(const Arg *arg){
@@ -111,9 +118,9 @@ static Key keys[] = {
 
 
 	{ MODKEY,                       XK_Left,   focusstack,     {.i = -1 } },
-	{ MODKEY,                       XK_Right,  focusstack,     {.i = +1 } },
-	{ MODKEY,                       XK_Up,     focusstack,     {.i = -1 } },
-	{ MODKEY,                       XK_Down,   focusstack,     {.i = +1 } },
+	{ MODKEY,                       XK_Left,   focusstack,     {.i = -1 } },
+	{ MODKEY,                       XK_k,   focusstack,     {.i = -1 } },
+	{ MODKEY,                       XK_j,  focusstack,     {.i = +1 } },
 
 	{ MODKEY,                       XK_p,      incnmaster,     {.i = +1 } },
 	{ MODKEY,                       XK_o,      incnmaster,     {.i = -1 } },
