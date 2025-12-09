@@ -11,7 +11,7 @@ static const int systraypinningfailfirst = 1;   /* 1: if pinning fails, display 
 static const int showsystray        = 1;     /* 0 means no systray */
 static const int showbar            = 1;     /* 0 means no bar */
 static const int topbar             = 1;     /* 0 means bottom bar */
-
+static void rotate_layout(const Arg *arg);
 
 static const char *fonts[] = {
     "JetBrains Mono NL:size=11",
@@ -86,7 +86,7 @@ static const Layout layouts[] = {
 	{ MODKEY|ControlMask|ShiftMask, KEY,      toggletag,      {.ui = 1 << TAG} },
 
 /* helper for spawning shell commands in the pre dwm-5.0 fashion */
-#define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
+#define SHCMD(cmd) { .v = (const char*[]){ "/bin/bash", "-c", cmd, NULL } }
 
 /* commands */
 static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() */
@@ -97,18 +97,15 @@ static const char *dmenucmd[] = { "dmenu_run", "-m", dmenumon, "-fn", dmenufont,
                                   "-sb", col_cyan, "-sf", col_black, NULL };
 
 
-static void
-rotate_layout(const Arg *arg){
-	
-	static int i= 0;
-	Arg topass = {.v = &layouts[++i % 6]};   
-	
-	setlayout(&topass);
-}
+
+
+
 static Key keys[] = {
 	/* modifier                     key        function        argument */
 	{ MODKEY,                       XK_d,      spawn,          {.v = dmenucmd } },
 	{ MODKEY,                       XK_Return, spawn,          {.v = termcmd } },
+	{ MODKEY,                       XK_F2,    spawn,          SHCMD("kill $(pidof sxhkd) && sxhkd -c ~/.config/sxhkd/sxhkdrc-dwm &")},
+			
 	{ MODKEY,                       XK_b,      togglebar,      {0} },
 
 	{ MODKEY|ShiftMask,             XK_Left,   setmfact,       {.f = -0.05} },
@@ -174,3 +171,11 @@ static Button buttons[] = {
 };
 
 
+static void
+rotate_layout(const Arg *arg){
+	
+	static int i= 0;
+	Arg topass = {.v = &layouts[++i % 6]};   
+	
+	setlayout(&topass);
+}

@@ -9,8 +9,7 @@ usb() {
 
 fs() {
     root=$(df -h / | awk 'NR==2{print $3}')
-    home=$(df -h /home | awk 'NR==2{print $3}')
-    echo "d:root:$root h:$home"
+    echo "d:root:$root "
 }
 
 ram() { free -h | awk '$1=="Mem:"{print "r:"$3}' | sed 's/i//'; }
