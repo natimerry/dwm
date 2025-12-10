@@ -20,6 +20,7 @@
  *
  * To understand everything else, start reading main().
  */
+#include <X11/X.h>
 #include <errno.h>
 #include <locale.h>
 #include <signal.h>
@@ -110,6 +111,9 @@ struct Client {
 	int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen;
 	Client *next;
 	Client *snext;
+	pid_t pid;
+	Client *swallowing;
+	int isswallowed; 
 	Monitor *mon;
 	Window win;
 };
@@ -268,6 +272,8 @@ static int xerror(Display *dpy, XErrorEvent *ee);
 static int xerrordummy(Display *dpy, XErrorEvent *ee);
 static int xerrorstart(Display *dpy, XErrorEvent *ee);
 static void zoom(const Arg *arg);
+static pid_t getwinpid(Window w);
+static pid_t getparentpid(pid_t pid);
 
 /* variables */
 static Systray *systray = NULL;
@@ -312,6 +318,77 @@ static Window root, wmcheckwin;
 struct NumTags { char limitexceeded[LENGTH(tags) > 31 ? -1 : 1]; };
 
 /* function implementations */
+
+pid_t
+getparentpid(pid_t pid)
+{
+    char buf[256];
+    snprintf(buf, sizeof(buf), "/proc/%d/stat", pid);
+    FILE *f = fopen(buf, "r");
+    if (!f) return 0;
+
+    pid_t ppid = 0;
+
+    if (fscanf(f, "%*d %*s %*c %d", &ppid) != 1)
+        ppid = 0;
+    
+    fclose(f);
+    return ppid;
+}
+
+Client *
+termforwin(const Client *c)
+{
+  Client *t;
+  pid_t pid = c->pid;
+  int i;
+  
+	// arbitrary depth, should be deep enough to cover everything
+  const int MAX_DEPTH = 7;
+
+  if (!pid) return NULL;
+
+  for (i = 0; i < MAX_DEPTH; i++) {
+      pid_t ppid = getparentpid(pid);
+
+      /* Stop if we hit init (1) or error (0) */
+      if (ppid <= 1) 
+          return NULL;
+
+      /* Check if this ancestor PID belongs to a visible client */
+      for (t = selmon->clients; t; t = t->next) {
+          if (t->pid == ppid)
+              return t;
+      }
+
+      pid = ppid;
+  }
+
+  return NULL;
+}
+
+/* no clue, idk how X11 works the box told me to do this */ 
+pid_t
+getwinpid(Window w)
+{
+	Atom type;
+  int format;
+  unsigned long nitems, bytes_after;
+  unsigned char *prop;
+  pid_t ret = 0;
+  Atom net_wm_pid = XInternAtom(dpy, "_NET_WM_PID", False);
+  if (XGetWindowProperty(dpy, w, net_wm_pid, 0, 1, False, XA_CARDINAL,
+                         &type, &format, &nitems, &bytes_after, &prop) == Success)
+  {
+  	if (prop)
+  	{
+  		ret = *(pid_t*)prop;
+  		XFree(prop);
+  	} 	
+  }
+  return ret;
+}
+
 void
 applyrules(Client *c)
 {
@@ -1163,6 +1240,11 @@ manage(Window w, XWindowAttributes *wa)
 
 	c = ecalloc(1, sizeof(Client));
 	c->win = w;
+
+
+	c->pid = getwinpid(w);
+	
+	
 	/* geometry */
 	c->x = c->oldx = wa->x;
 	c->y = c->oldy = wa->y;
@@ -1177,6 +1259,47 @@ manage(Window w, XWindowAttributes *wa)
 	} else {
 		c->mon = selmon;
 		applyrules(c);
+	}
+
+	/* swallowing */
+	XClassHint ch = { NULL, NULL };
+	if (XGetClassHint(dpy, w, &ch)){
+		int i;
+		int match = 0;
+		for (i = 0; swallowrules[i]; i++)
+		{
+			if (ch.res_class && strstr(ch.res_class, swallowrules[i])) {
+				match = 1;
+				break;
+			}
+		}
+
+		if (match){
+			Client *term = termforwin(c);
+			if (term && term->tags == c->tags && !term->isfloating) {
+				
+				c->tags = term->tags;
+				c->mon = term->mon;
+				
+				c->x = term->x;
+				c->y = term->y;
+				c->w = term->w;
+				c->h = term->h;
+				
+				c->swallowing = term;
+				term->swallowing = c;
+
+				term->isswallowed = 1;
+				
+				/* Setting tags to 0 removes it from the layout engine's view */
+				term->tags = 0; 
+				XUnmapWindow(dpy, term->win);
+				
+				c->isfloating = 0;
+			}
+		}
+		if (ch.res_class) XFree(ch.res_class);
+		if (ch.res_name) XFree(ch.res_name);
 	}
 
 	if (c->x + WIDTH(c) > c->mon->mx + c->mon->mw)
@@ -2029,24 +2152,48 @@ unmanage(Client *c, int destroyed)
 	Monitor *m = c->mon;
 	XWindowChanges wc;
 
+	/* restore swallowed terminal if it exists */
+	if (c->swallowing) {
+		Client *term = c->swallowing;
+		term->tags = m->tagset[m->seltags]; /* restore visibility */
+		term->swallowing = NULL; /* break link */
+		setclientstate(term, NormalState);
+		XMapWindow(dpy, term->win);
+		focus(term);
+	}
+
+	/* if c itself was swallowed, clear the swallower's reference */
+	Client *s;
+	for (s = m->clients; s; s = s->next) {
+		if (s->swallowing == c) {
+			s->swallowing = NULL;
+			break;
+		}
+	}
+
 	detach(c);
 	detachstack(c);
 	if (!destroyed) {
 		wc.border_width = c->oldbw;
-		XGrabServer(dpy); /* avoid race conditions */
+		XGrabServer(dpy); 
 		XSetErrorHandler(xerrordummy);
-		XConfigureWindow(dpy, c->win, CWBorderWidth, &wc); /* restore border */
+		XConfigureWindow(dpy, c->win, CWBorderWidth, &wc);
 		XUngrabButton(dpy, AnyButton, AnyModifier, c->win);
 		setclientstate(c, WithdrawnState);
 		XSync(dpy, False);
 		XSetErrorHandler(xerror);
 		XUngrabServer(dpy);
 	}
+
+	/* only find new focus if we didn't just restore/focus a terminal */
+	if (!c->swallowing)
+		focus(NULL);
+		
 	free(c);
-	focus(NULL);
 	updateclientlist();
 	arrange(m);
 }
+
 
 void
 unmapnotify(XEvent *e)
@@ -2057,7 +2204,7 @@ unmapnotify(XEvent *e)
 	if ((c = wintoclient(ev->window))) {
 		if (ev->send_event)
 			setclientstate(c, WithdrawnState);
-		else
+		else if (!c->isswallowed)
 			unmanage(c, 0);
 	}
 	else if ((c = wintosystrayicon(ev->window))) {
