@@ -11,26 +11,41 @@ static const int systraypinningfailfirst = 1;   /* 1: if pinning fails, display 
 static const int showsystray        = 1;     /* 0 means no systray */
 static const int showbar            = 1;     /* 0 means no bar */
 static const int topbar             = 1;     /* 0 means bottom bar */
-static const char *fonts[]          = { "Roboto Mono Medium Nerd Font Complete Mono:size=12","Noto Sans CJK JP:size=10",
-																				"SauceCodePro Nerd Font Mono:size=20","Material Icons:pixelsize=15;5","Sinji:pixelsize=15;5","Togalite medium:pixelsize=12;4"};
-static const char dmenufont[]       = "Roboto Mono Medium Nerd Font Complete Mono:size=12";
-//background color
+static void rotate_layout(const Arg *arg);
+
+static const char *fonts[] = {
+    "JetBrains Mono NL:size=11",
+    "FiraCode Nerd Font:size=11",
+    "monospace:size=11",
+    "Font Awesome 6 Free:size=11",
+    "Font Awesome 6 Brands:size=11",
+    "Material Icons:size=11",
+    "Symbola:size=11"
+};
+
+static const char dmenufont[] = "JetBrains Mono NL:size=11";
+
+// background color (keep as is)
 static const char col_gray1[]       = "#1a1b26";
-//inactive window border color
-static const char col_gray2[]       = "#de83c6";
-// font color
+// inactive window border color (dark gray)
+static const char col_gray2[]       = "#444444";
+// font color (white for normal)
 static const char col_gray3[]       = "#FFFFFF";
-//current window font
+// normal window font (white)
 static const char col_gray4[]       = "#FFFFFF";
-static const char col_cyan[]        = "#81aeff";
+// highlight color (light gray for selected bg/border)
+static const char col_cyan[]        = "#CCCCCC";
+// black text for highlighted background
+static const char col_black[]       = "#000000";
 
 static const char *colors[][3]      = {
 	/*               fg         bg         border   */
 	[SchemeNorm] = { col_gray3, col_gray1, col_gray2 },
-	[SchemeSel]  = { col_gray4, col_cyan,  col_cyan  },
+	[SchemeSel]  = { col_black, col_cyan,  col_cyan  },
 };
+
 /* tagging */
-static const char *tags[] = {" ", " ", "﬏", " ", " ", " ", "ﭮ" , " ", " "};
+static const char *tags[] = {"1","2","3","4","5","6","7","8","9","10"};
 static const Rule rules[] = {
 	/* xprop(1):
 	 *	WM_CLASS(STRING) = instance, class
@@ -39,10 +54,10 @@ static const Rule rules[] = {
 	/* class      instance    title       tags mask     isfloating   monitor */
 	{ "code-oss", NULL,       NULL,       1 << 2,       0,           -1 },
 	{ "Thunar",   NULL,       NULL,       1 << 3,       0,           -1 },
-	{ "code-oss", NULL,       NULL,       1 << 2,       0,           -1 },
-	{ "mpv",      NULL,       NULL,       1 << 5,       0,           -1 },
-	{ "vlc",      NULL,       NULL,       1 << 5,       0,           -1 },
+	{ "code-oss", NULL,       NULL,       1 << 2,       0,           -1 }
 };
+
+static const char *swallowrules[] = {"Zathura","mpv",NULL};
 /* layout(s) */
 static const float mfact     = 0.55; /* factor of master area size [0.05..0.95] */
 static const int nmaster     = 1;    /* number of clients in master area */
@@ -70,19 +85,39 @@ static const Layout layouts[] = {
 	{ MODKEY|ControlMask|ShiftMask, KEY,      toggletag,      {.ui = 1 << TAG} },
 
 /* helper for spawning shell commands in the pre dwm-5.0 fashion */
-#define SHCMD(cmd) { .v = (const char*[]){ "/bin/sh", "-c", cmd, NULL } }
+#define SHCMD(cmd) { .v = (const char*[]){ "/bin/bash", "-c", cmd, NULL } }
 
 /* commands */
 static char dmenumon[2] = "0"; /* component of dmenucmd, manipulated in spawn() */
-static const char *termcmd[]  = { "kitty", NULL };
-static const char *dmenucmd[] = { "dmenu_run", "-m", dmenumon, "-fn", dmenufont, "-nb", col_gray1, "-nf", col_gray3, "-sb", col_cyan, "-sf", col_gray4, NULL };
+static const char *termcmd[]  = { "alacritty", NULL };
+
+static const char *dmenucmd[] = { "dmenu_run", "-m", dmenumon, "-fn", dmenufont, 
+                                  "-nb", col_gray1, "-nf", col_gray3, 
+                                  "-sb", col_cyan, "-sf", col_black, NULL };
+
+
+
+
+
 static Key keys[] = {
 	/* modifier                     key        function        argument */
 	{ MODKEY,                       XK_d,      spawn,          {.v = dmenucmd } },
 	{ MODKEY,                       XK_Return, spawn,          {.v = termcmd } },
+	{ MODKEY,                       XK_F2,    spawn,          SHCMD("kill $(pidof sxhkd) && sxhkd -c ~/.config/sxhkd/sxhkdrc-dwm &")},
+			
 	{ MODKEY,                       XK_b,      togglebar,      {0} },
-	{ MODKEY,                       XK_j,      focusstack,     {.i = +1 } },
-	{ MODKEY,                       XK_k,      focusstack,     {.i = -1 } },
+
+	{ MODKEY|ShiftMask,             XK_Left,   setmfact,       {.f = -0.05} },
+	{ MODKEY|ShiftMask,             XK_Right,  setmfact,       {.f = +0.05} },
+	{ MODKEY|ShiftMask,             XK_Up,     setmfact,       {.f = +0.05} },
+	{ MODKEY|ShiftMask,             XK_Down,   setmfact,       {.f = -0.05} },
+
+
+	{ MODKEY,                       XK_Left,   focusstack,     {.i = -1 } },
+	{ MODKEY,                       XK_Left,   focusstack,     {.i = -1 } },
+	{ MODKEY,                       XK_k,   focusstack,     {.i = -1 } },
+	{ MODKEY,                       XK_j,  focusstack,     {.i = +1 } },
+
 	{ MODKEY,                       XK_p,      incnmaster,     {.i = +1 } },
 	{ MODKEY,                       XK_o,      incnmaster,     {.i = -1 } },
 	{ MODKEY,                       XK_h,      setmfact,       {.f = -0.05} },
@@ -95,7 +130,7 @@ static Key keys[] = {
 	{ MODKEY,                       XK_r,      setlayout,      {.v = &layouts[3]} },
 	{ MODKEY|ShiftMask,             XK_r,      setlayout,      {.v = &layouts[4]} },
 	{ MODKEY|ShiftMask,             XK_c,      setlayout,      {.v = &layouts[5]} },
-	{ MODKEY,                       XK_space,  setlayout,      {0} },
+	{ MODKEY,                       XK_space,  rotate_layout,      {0} },
 	{ MODKEY,                       XK_0,      view,           {.ui = ~0 } },
 	{ MODKEY|ShiftMask,             XK_0,      tag,            {.ui = ~0 } },
 	{ MODKEY,                       XK_comma,  focusmon,       {.i = -1 } },
@@ -134,3 +169,12 @@ static Button buttons[] = {
 	{ ClkTagBar,            MODKEY,         Button3,        toggletag,      {0} },
 };
 
+
+static void
+rotate_layout(const Arg *arg){
+	
+	static int i= 0;
+	Arg topass = {.v = &layouts[++i % 6]};   
+	
+	setlayout(&topass);
+}

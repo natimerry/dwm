@@ -53,13 +53,9 @@ static const Rule rules[] = {
 	 */
 	/* class      instance    title       tags mask     isfloating   monitor */
 	{ "code-oss", NULL,       NULL,       1 << 2,       0,           -1 },
-	{ "Thunar",   NULL,       NULL,       1 << 3,       0,           -1 },
-	{ "code-oss", NULL,       NULL,       1 << 2,       0,           -1 },
-	{ "mpv",      NULL,       NULL,       1 << 5,       0,           -1 },
-	{ "vlc",      NULL,       NULL,       1 << 5,       0,           -1 },
 };
 
-static const char *swallowrules[] = {"Zathura","mpv",NULL};
+static const char *swallowrules[] = {"Zathura","feh","mpv",NULL};
 /* layout(s) */
 static const float mfact     = 0.55; /* factor of master area size [0.05..0.95] */
 static const int nmaster     = 1;    /* number of clients in master area */

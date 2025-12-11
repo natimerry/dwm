@@ -1,0 +1,212 @@
+diff --git a/config.def.h b/config.def.h
+index 81c3fc0..87f66c0 100644
+--- a/config.def.h
++++ b/config.def.h
+@@ -31,6 +31,8 @@ static const Rule rules[] = {
+ 	{ "Firefox",  NULL,       NULL,       1 << 8,       0,           -1 },
+ };
+ 
++static const char *swallowrules[] = {"Zathura","mpv",NULL};
++
+ /* layout(s) */
+ static const float mfact     = 0.55; /* factor of master area size [0.05..0.95] */
+ static const int nmaster     = 1;    /* number of clients in master area */
+diff --git a/dwm.c b/dwm.c
+index 4f345ee..c86e854 100644
+--- a/dwm.c
++++ b/dwm.c
+@@ -94,6 +94,9 @@ struct Client {
+ 	int isfixed, isfloating, isurgent, neverfocus, oldstate, isfullscreen;
+ 	Client *next;
+ 	Client *snext;
++	pid_t pid;
++	Client *swallowing;
++	int isswallowed; 
+ 	Monitor *mon;
+ 	Window win;
+ };
+@@ -232,6 +235,9 @@ static int xerror(Display *dpy, XErrorEvent *ee);
+ static int xerrordummy(Display *dpy, XErrorEvent *ee);
+ static int xerrorstart(Display *dpy, XErrorEvent *ee);
+ static void zoom(const Arg *arg);
++static pid_t getwinpid(Window w);
++static pid_t getparentpid(pid_t pid);
++static Client* termforwin(const Client *c);
+ 
+ /* variables */
+ static const char broken[] = "broken";
+@@ -274,6 +280,68 @@ static Window root, wmcheckwin;
+ struct NumTags { char limitexceeded[LENGTH(tags) > 31 ? -1 : 1]; };
+ 
+ /* function implementations */
++pid_t
++getparentpid(pid_t pid)
++{
++    char buf[256];
++    snprintf(buf, sizeof(buf), "/proc/%d/stat", pid);
++    FILE *f = fopen(buf, "r");
++    if (!f) return 0;
++    pid_t ppid = 0;
++    if (fscanf(f, "%*d %*s %*c %d", &ppid) != 1)
++        ppid = 0;
++    fclose(f);
++    return ppid;
++}
++
++Client *
++termforwin(const Client *c)
++{
++  Client *t;
++  pid_t pid = c->pid;
++  int i;
++	// arbitrary depth, should be deep enough to cover everything
++  const int MAX_DEPTH = 7;
++  if (!pid) return NULL;
++  for (i = 0; i < MAX_DEPTH; i++) {
++      pid_t ppid = getparentpid(pid);
++
++      /* Stop if we hit init (1) or error (0) */
++      if (ppid <= 1) 
++          return NULL;
++
++      /* Check if this ancestor PID belongs to a visible client */
++      for (t = selmon->clients; t; t = t->next) {
++          if (t->pid == ppid)
++              return t;
++      }
++      pid = ppid;
++  }
++  return NULL;
++}
++
++pid_t
++getwinpid(Window w)
++{
++	Atom type;
++  int format;
++  unsigned long nitems, bytes_after;
++  unsigned char *prop;
++  pid_t ret = 0;
++  Atom net_wm_pid = XInternAtom(dpy, "_NET_WM_PID", False);
++
++  if (XGetWindowProperty(dpy, w, net_wm_pid, 0, 1, False, XA_CARDINAL,
++                         &type, &format, &nitems, &bytes_after, &prop) == Success)
++  {
++  	if (prop)
++  	{
++  		ret = *(pid_t*)prop;
++  		XFree(prop);
++  	} 	
++  }
++  return ret;
++}
++
+ void
+ applyrules(Client *c)
+ {
+@@ -1036,6 +1104,8 @@ manage(Window w, XWindowAttributes *wa)
+ 
+ 	c = ecalloc(1, sizeof(Client));
+ 	c->win = w;
++	c->pid = getwinpid(w);
++	
+ 	/* geometry */
+ 	c->x = c->oldx = wa->x;
+ 	c->y = c->oldy = wa->y;
+@@ -1052,6 +1122,51 @@ manage(Window w, XWindowAttributes *wa)
+ 		applyrules(c);
+ 	}
+ 
++	/* swallowing */
++	XClassHint ch = { NULL, NULL };
++
++
++	if (XGetClassHint(dpy, w, &ch)){
++
++
++		int i;
++
++
++		int match = 0;
++
++
++		for (i = 0; swallowrules[i]; i++)
++		{
++			if (ch.res_class && strstr(ch.res_class, swallowrules[i])) {
++				match = 1;
++				break;
++			}
++		}
++		if (match){
++			Client *term = termforwin(c);
++			if (term && term->tags == c->tags && !term->isfloating) {
++				c->tags = term->tags;
++
++				c->mon = term->mon;
++				c->x = term->x;
++				c->y = term->y;
++				c->w = term->w;
++				c->h = term->h;
++
++				c->swallowing = term;
++				term->swallowing = c;
++				term->isswallowed = 1;
++
++				/* Setting tags to 0 removes it from the layout engine's view */
++				term->tags = 0; 
++				XUnmapWindow(dpy, term->win);				
++				c->isfloating = 0;
++			}
++		}
++		if (ch.res_class) XFree(ch.res_class);
++		if (ch.res_name) XFree(ch.res_name);
++	}
++	
+ 	if (c->x + WIDTH(c) > c->mon->wx + c->mon->ww)
+ 		c->x = c->mon->wx + c->mon->ww - WIDTH(c);
+ 	if (c->y + HEIGHT(c) > c->mon->wy + c->mon->wh)
+@@ -1779,7 +1894,22 @@ unmanage(Client *c, int destroyed)
+ {
+ 	Monitor *m = c->mon;
+ 	XWindowChanges wc;
+-
++	if (c->swallowing) {
++		Client *term = c->swallowing;
++		term->tags = m->tagset[m->seltags]; /* restore visibility */
++		term->swallowing = NULL; /* break link */
++		setclientstate(term, NormalState);
++		XMapWindow(dpy, term->win);
++		focus(term);
++	}
++	/* if c itself was swallowed, clear the swallower's reference */
++	Client *s;
++	for (s = m->clients; s; s = s->next) {
++		if (s->swallowing == c) {
++			s->swallowing = NULL;
++			break;
++		}
++	}
+ 	detach(c);
+ 	detachstack(c);
+ 	if (!destroyed) {
+@@ -1794,8 +1924,10 @@ unmanage(Client *c, int destroyed)
+ 		XSetErrorHandler(xerror);
+ 		XUngrabServer(dpy);
+ 	}
++	if (!c->swallowing)
++		focus(NULL);
++	
+ 	free(c);
+-	focus(NULL);
+ 	updateclientlist();
+ 	arrange(m);
+ }
+@@ -1809,7 +1941,7 @@ unmapnotify(XEvent *e)
+ 	if ((c = wintoclient(ev->window))) {
+ 		if (ev->send_event)
+ 			setclientstate(c, WithdrawnState);
+-		else
++		else if (!c->isswallowed)
+ 			unmanage(c, 0);
+ 	}
+ }
